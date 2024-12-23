@@ -85,8 +85,10 @@ if __name__ == '__main__':
     output_file = '../data/eswiki-processed-v3_long'
 
     # Load the dataset
-    dataset = load_dataset("text", data_files=input_file)['train']
+    # dataset = load_dataset("text", data_files=input_file)['train']
     # dataset = dataset.select(range(10000))
+    dataset = load_dataset("daqc/wikipedia-txt-spanish", split="train")
+    dataset = dataset.shuffle(seed=42).select(range(100000))
 
     # Normalize text
     normalized_dataset = dataset.map(preprocess)
