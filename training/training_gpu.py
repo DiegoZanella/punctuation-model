@@ -1,5 +1,5 @@
 from transformers import GPT2Model, Trainer, TrainingArguments, GPT2Tokenizer
-from datasets import load_from_disk
+from datasets import load_from_disk, load_dataset
 import json
 from torch import nn
 from transformers import Trainer
@@ -13,24 +13,27 @@ print(f"Current working directory: {os.getcwd()}")
 print(f"GPU available: {torch.cuda.is_available()}")
 print(f"Using device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
 
-# Paths and Parameters
-DATASET_PATH = "punctuation-model/data/eswiki-processed-v3_long"  # Path to tokenized dataset
+version = "v3-long"
+MODEL_NAME = f"PanditaInfernal/punctuation_model_{version}"
+# Load the dataset from Hugging Face
+DATASET_NAME = f"PanditaInfernal/eswiki-processed-v3-long"
+dataset = load_dataset(DATASET_NAME)["train"]
+DATASET_PATH = "punctuation-model/data/eswiki-processed-v3_long"
+
+# Shuffle and select the data as needed
+dataset = dataset.shuffle(seed=42)
+dataset = dataset.select(range(5000))  # Take only the first 10 examples
+print("Finished loading dataset from Hugging Face...")
+
+
+# Path to tokenized dataset
 TOKENIZER_PATH = "datificate/gpt2-small-spanish"
-OUTPUT_DIR = "punctuation-model/models/punctuation_model_v3_short"  # Directory to save the model
-BATCH_SIZE = 2   # Batch size for training
-EPOCHS = 1  # Number of training epochs
+OUTPUT_DIR = f"punctuation-model/models/punctuation_model_{version}"  # Directory to save the model
+BATCH_SIZE = 6   # Batch size for training
+EPOCHS = 3 # Number of training epochs
 LEARNING_RATE = 5e-5  # Learning rate
 FREEZE_LAYERS = 6
 NUM_CLASSES = 7
-
-
-
-
-# Load the dataset
-dataset = load_from_disk(DATASET_PATH)
-dataset = dataset.shuffle(seed=42)
-dataset = dataset.select(range(10))  # Take only the first 200 examples
-print("Finished loading dataset...")
 
 # Manually create a train-test split
 test_size = 0.1  # Use 10% of the data for validation
@@ -58,6 +61,7 @@ class PunctuationClassifier(nn.Module):
         super(PunctuationClassifier, self).__init__()
         self.gpt2 = model
         self.classifier = nn.Linear(self.gpt2.config.hidden_size, num_classes)  # Binary classification (space or punctuation)
+        self.config = self.gpt2.config
 
     def forward(self, input_ids, attention_mask, masked_position, labels=None):
         outputs = self.gpt2(input_ids=input_ids, attention_mask=attention_mask)
@@ -139,19 +143,36 @@ print(f"Begining training...")
 trainer.train()
 print("Finished training...")
 
-# Save the final model
+# Save the final model locally
 print("Saving model...")
 trainer.save_model(OUTPUT_DIR)
-print(f"Model saved to {OUTPUT_DIR}")
+print(f"Model saved locally to {OUTPUT_DIR}")
+
+# Push the model to Hugging Face Hub
+print("Pushing model to Hugging Face Hub...")
+trainer.push_to_hub(MODEL_NAME)
+
+print(f"Model pushed to Hugging Face Hub: {MODEL_NAME}")
 
 # Testing the model
 def test_model(input_text, masked_position):
+    # Tokenize the input
     inputs = tokenizer(input_text, return_tensors="pt", max_length=512, truncation=True)
-    logits = model(input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], masked_position=[masked_position])
+    
+    # Move inputs to the same device as the model
+    inputs = {key: value.to(device) for key, value in inputs.items()}
+    
+    # Call the model with the inputs
+    logits = model(input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], masked_position=torch.tensor([masked_position], device=device))
+    
+    # Compute the prediction
     prediction = logits.argmax(axis=-1).item()
+    
     return label_map_inverse[prediction]
 
 # Test input
 test_input = "hola<mask>como estas"
 test_position = 4  # Position of the mask
-print(f"Prediction for '{test_input}' at position {test_position}: {test_model(test_input, test_position)}")
+output = test_model(test_input, test_position)
+print(f"Prediction for '{test_input}' at position {test_position}: {output}")
+print(f"ASCII value of output: {ord(output)}")

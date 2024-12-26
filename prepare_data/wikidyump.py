@@ -3,6 +3,7 @@ import random
 import re
 from transformers import GPT2Tokenizer
 import json
+import os
 
 
 def normalize_text(text):
@@ -83,11 +84,12 @@ def tokenize_data(example, tokenizer):
 if __name__ == '__main__':
     input_file = '../data/eswiki-train.txt'
     output_file = '../data/eswiki-processed-v3_long'
-
+    print("Current directory: ", os.getcwd())
     # Load the dataset
     # dataset = load_dataset("text", data_files=input_file)['train']
     # dataset = dataset.select(range(10000))
     dataset = load_dataset("daqc/wikipedia-txt-spanish", split="train")
+    print(f"Number of training examples: {len(dataset)}")
     dataset = dataset.shuffle(seed=42).select(range(100000))
 
     # Normalize text
